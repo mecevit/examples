@@ -1,0 +1,42 @@
+# Titanic Survival Project Example
+#
+# Any directory includes an `model.yml` will be treated as a ml model project.
+# In this `yaml` file, we will define the attributes of our model.
+
+apiVersion: 1
+
+# Name and description of our model
+name: "survival_model_grid_search"
+description: "Titanic survival predictor"
+
+training:
+  name: survival_model_grid_search
+  description: "Titanic Survival Model Training With Grid Search"
+
+  # The source model definition file with a `train_model` method
+  entrypoint: model.py
+
+  # Let's do some hyperparameter tuning with the objective of maximizing the
+  # `accuracy` metric which we logged in the `model.py`
+  hyperparameters:
+    strategy: "Grid"
+    maximize: "accuracy"
+    tuning:
+      n_estimators:
+        type: "integer"
+        min: 4
+        max: 20
+        step: 10
+      max_depth:
+        type: "integer"
+        min: 1
+        max: 6
+        step: 4
+      max_samples:
+        type: "float"
+        min: 0.4
+        max: 0.9
+        step: 0.4
+
+  # File includes the required python libraries with their correct versions
+  environment: requirements.txt

@@ -1,0 +1,20 @@
+# Spam Detection Project Example
+#
+# Any directory includes an `model.yml` will be treated as a ml model project.
+# In this `yaml` file, we will define the attributes of our model.
+
+apiVersion: 1
+
+# Name and description of our model
+name: "spam_detection"
+description: "Spam detection model"
+
+training:
+  name: "spam_detection_training"
+  description: "Spam detection model training"
+
+  # The source model definition file with a `train_model` method
+  entrypoint: model.py
+
+  # File includes the required python libraries with their correct versions
+  environment: requirements.txt
