@@ -1,0 +1,10 @@
+apiVersion: 1
+
+name: "backlight_detector"
+description: "Backlight Detector"
+
+training:
+  name: "backlight_model_training"
+  description: "Backlight Detector Model Training"
+  entrypoint: model.py
+  environment: requirements.txt

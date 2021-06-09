@@ -1,0 +1,10 @@
+apiVersion: 1
+
+name: "car_classifier"
+description: "Build year classifier of the cars"
+
+training:
+  name: "car_classifier_training"
+  description: "Build year classifier training"
+  entrypoint: model.py
+  environment: requirements.txt

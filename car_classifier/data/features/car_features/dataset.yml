@@ -1,0 +1,20 @@
+apiVersion: 1
+
+type: featureset
+
+name: "car_features"
+description: "Car features"
+
+features:
+  - name: predicted_year
+    description: "Predicted build year of the car based on the car parts"
+    source: predicted_year.py
+    environment: requirements.txt
+
+schema:
+  primary_keys: ["id"]
+
+materializations:
+  - type: table
+    target: layer
+    table_name: car_features
