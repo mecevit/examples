@@ -10,5 +10,5 @@
 
 SELECT transactionId,
        if(oldbalanceOrg == 0 and newbalanceOrig == 0 and amount != 0, -1,
-          oldbalanceDest) as old_balance_orig
+          oldbalanceOrg) as old_balance_orig
 FROM transactions
