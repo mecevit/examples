@@ -4,56 +4,63 @@ from pyspark.ml import Pipeline
 from pyspark.ml.feature import VectorAssembler
 from pyspark.ml.classification import DecisionTreeClassifier
 from pyspark.ml.evaluation import BinaryClassificationEvaluator
+from pyspark.ml.linalg import Vectors, VectorUDT
 from pyspark.ml.tuning import CrossValidator, ParamGridBuilder
 from pyspark.sql.functions import col, pandas_udf, regexp_extract, split,element_at, when, PandasUDFType
 from pyspark.mllib.evaluation import MulticlassMetrics
-from layer import Featureset, Dataset, Train
+from layer import Featureset, Dataset, Context
 from pyspark.sql.functions import udf
-from pyspark.sql.types import DoubleType
+from pyspark.sql.types import DoubleType, ArrayType, FloatType
+import numpy as np
 
 
-def train_model(train: Train, products: Dataset("products"),
-                product_features: Featureset("product_features")) -> Pipeline:
+def train_model(context: Context, label_features: Featureset("label_features"), image_similarity_features: Featureset("image_similarity_features"),
+  title_similarity_features: Featureset("title_similarity_features")) -> Pipeline:
 
-    pf = product_features.to_spark()
-    pdf = products.to_spark()
+    context.spark().conf.set("spark.sql.shuffle.partitions", 25)
 
-    # We join our features with the source dataset to compute the labels
-    text_image_df = pf.join(pdf, on=['image'], how='left').select("posting_id",
-                                                                  "label_group",
-                                                                  "image_vector",
-                                                                  "title_vector",
-                                                                  "image_phash")
+    # Load the data.
+    labels = label_features.to_spark()
+    image_similarities = image_similarity_features.to_spark()
+    title_similarities = title_similarity_features.to_spark()
 
-    # Before cross join, we sort and rename our features
-    tidf = text_image_df.sort("posting_id").select("posting_id", "label_group",
-                                                   "title_vector", "image_vector",
-                                                   "image_phash")
-    tidf2 = tidf.selectExpr("posting_id as pid", "label_group as lg",
-                            "title_vector as tidf", "image_vector as iv",
-                            "image_phash as ip")
+    # We join our features with the labels featureset to compute the labels
+    join_labels = labels.selectExpr("posting_id as pid", "label_group", "image_phash")
+    similarities = image_similarities.join(title_similarities, on=["posting_id", "posting_id_2"], how="inner")
 
-    # We do a cross join to create product pairs.
-    joined = tidf.join(tidf2, tidf.posting_id < tidf2.pid, "cross")
+    label1_similarity = similarities.join(join_labels, similarities.posting_id == join_labels.pid, how="inner").selectExpr(
+                                                                  "posting_id",
+                                                                  "posting_id_2",
+                                                                  "title_similarity",
+                                                                  "image_similarity",
+                                                                  "label_group as label_group_1",
+                                                                  "image_phash as image_phash_1"
+                                                                  )
 
-    labeled = joined.withColumn('label', when(col('label_group') == col('lg'),
+    label2_similarity = label1_similarity.join(join_labels, label1_similarity.posting_id_2 == join_labels.pid, how="inner").selectExpr(
+                                                                  "posting_id",
+                                                                  "posting_id_2",
+                                                                  "title_similarity",
+                                                                  "image_similarity",
+                                                                  "label_group_1",
+                                                                  "image_phash_1",
+                                                                  "label_group as label_group_2",
+                                                                  "image_phash as image_phash_2"
+                                                                  )
+
+    labeled = label2_similarity.withColumn('label', when(col('label_group_1') == col('label_group_2'),
                                               1.0).otherwise(0.0)).withColumn(
         'has_same_phash',
-        when(col('image_phash') == col('ip'), 1.0).otherwise(0.0))
+        when(col('image_phash_1') == col('image_phash_2'), 1.0).otherwise(0.0))
 
-    to_similarity = udf(lambda v1, v2: similarity(v1, v2), DoubleType())
-
-    final_df = labeled.select(
-        to_similarity(col("title_vector"), col("tidf")).alias("title_simi"),
-        to_similarity(col("image_vector"), col("iv")).alias("img_simi"),
-        "has_same_phash", "label")
+    final_df = labeled.select("title_similarity", "image_similarity", "label", "has_same_phash").cache()
 
     # Split data into test and train
     train_set, test_set = final_df.randomSplit([0.7, 0.3])
 
     # Build our pipeline: VectorAssembler + DecisionTreeClassifier
     assembler = VectorAssembler(
-        inputCols=['title_simi', 'img_simi', 'has_same_phash'],
+        inputCols=['title_similarity', 'image_similarity', 'has_same_phash'],
         outputCol='features')
     dt = DecisionTreeClassifier(labelCol='label', featuresCol='features')
     pipeline = Pipeline(stages=[assembler, dt])
@@ -76,25 +83,11 @@ def train_model(train: Train, products: Dataset("products"),
     # Log metrics
     auc_score = evaluator.evaluate(prediction)
     metrics = MulticlassMetrics(prediction.select('prediction', 'label').rdd.map(tuple))
-    train.log_metric("AUC Score", auc_score)
-    train.log_metric("Confusion Matrix", str(metrics.confusionMatrix().toArray()))
+    context.train().log_metric("AUC Score", auc_score)
 
     # Log feature importances
     feature_importances = model.bestModel.stages[-1].featureImportances
-    train.log_metric("Title Importance", feature_importances.toArray()[0])
-    train.log_metric("Image Importance", feature_importances.toArray()[1])
+    context.train().log_metric("Title Importance", feature_importances.toArray()[0])
+    context.train().log_metric("Image Importance", feature_importances.toArray()[1])
 
     return model
-
-
-def cosine_similarity(v1, v2):
-    denom = v1.norm(2) * v2.norm(2)
-    if denom == 0.0:
-        return -1.0
-    else:
-        return v1.dot(v2) / float(denom)
-
-
-def similarity(v1, v2):
-    vector_simi = cosine_similarity(v1, v2)
-    return float(vector_simi)

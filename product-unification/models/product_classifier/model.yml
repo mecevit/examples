@@ -6,15 +6,17 @@
 apiVersion: 1
 
 # Name and description of our model
-name: "product_classifier"
-description: "Product classifier model"
+name: "product_unification_dt_classifier"
+description: "Product unification classifier model"
 
 training:
-  name: "product_classifier_training"
-  description: "Product classifier model training"
+  name: "product_unification_classifier_training"
+  description: "Product unification classifier model training"
 
   # The source model definition file with a `train_model` method
   entrypoint: model.py
 
   # File includes the required python libraries with their correct versions
   environment: requirements.txt
+  fabric:
+    type: spark
