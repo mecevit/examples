@@ -1,6 +1,6 @@
 # Product Unification Example
 
-A complex MLOps pipeline with many of dynamically extracted features and linked ML Models. 
+A complex MLOps pipeline with many dynamically extracted features and linked ML Models. 
 
 ## What we are going to learn?
 
