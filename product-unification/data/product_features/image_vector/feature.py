@@ -1,76 +1,75 @@
-import pandas as pd
-from PIL import Image
-import numpy as np
 import io
-from typing import Any
+import base64
+import gzip
+from typing import Any, Iterator
+
+import numpy as np
+import pandas as pd
+from layer import Context, Dataset
+from PIL import Image
+from pyspark.sql.functions import pandas_udf, unbase64
+from pyspark.sql.types import StringType
 from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
-from pyspark.sql.functions import col, pandas_udf, PandasUDFType, udf, unbase64
-from pyspark.ml.linalg import Vectors, VectorUDT
-from layer import Dataset
 
 
-def build_feature(products: Dataset("products")) -> Any:
-    model = ResNet50(include_top=False)
-    bc_model_weights = spark.sparkContext.broadcast(model.get_weights())
+def build_feature(context: Context, products: Dataset("products")) -> Any:
+    """
+    Vectorize images using ResNet50 model.
 
-    products_df = products.to_spark()
+    :param context: layer context.
+    :param products: products dataset.
+    """
+    spark = context.spark().sparkContext
+    model_weights = spark.broadcast(ResNet50(include_top=False).get_weights())
+
+    @pandas_udf(returnType=StringType())
+    def vectorize_image(
+        image_content_iter: Iterator[pd.Series],
+    ) -> Iterator[pd.Series]:
+        """
+        Spark pandas_udf to compute image vectors using ResNet50 model.
+
+        :param image_content_iter: iterator of the image dataset.
+        Each iterator item represens a batch of images to process as pandas.Series.
+        """
+        model = ResNet50(weights=None, include_top=False)
+        model.set_weights(model_weights.value)
+        for content in image_content_iter:
+            _input = np.stack(content.map(preprocess_image_content_resnet50))
+            preds = model.predict(_input)
+            output = [compress_base64(p.flatten()) for p in preds]
+            yield pd.Series(output)
+
+    # distribute the workload evenly, to a number of executors
+    products_df = products.to_spark().repartition(5, "image_phash")
+
     products_binary_df = products_df.withColumn("content", unbase64("content"))
+    products_vector_df = products_binary_df.withColumn(
+        "image_vector", vectorize_image("content")
+    )
 
-    to_vector = udf(lambda a: Vectors.dense(a), VectorUDT())
-    features_df = products_binary_df.repartition(16).withColumn("image_vector", to_vector(
-        featurize_udf("content", bc_model_weights)))
-
-    return features_df.select("posting_id", "image_vector")
+    return products_vector_df.select("posting_id", "image_vector").toPandas()
 
 
-def model_fn(bc_model_weights):
+def preprocess_image_content_resnet50(content):
     """
-    Returns a ResNet50 model with top layer removed and broadcasted pretrained
-    weights.
-    """
-    model = ResNet50(weights=None, include_top=False)
-    model.set_weights(bc_model_weights.value)
-    return model
+    Prepare raw image data as an input to ResNet50 model.
 
-
-def preprocess(content):
-    """
-    Preprocesses raw image bytes for prediction.
+    :param content: raw image bytes.
     """
     img = Image.open(io.BytesIO(content)).resize([224, 224])
     arr = img_to_array(img)
     return preprocess_input(arr)
 
 
-def featurize_series(model, content_series):
+def compress_base64(image_vector):
     """
-    Featurize a pd.Series of raw images using the input model.
-    :return: a pd.Series of image features
+    Compress and encode image vector to base64 string
+    :param image_vector: image vector to encode
+    :return: base64 string of an image vector
     """
-    input = np.stack(content_series.map(preprocess))
-    preds = model.predict(input)
-    # For some layers, output features will be multi-dimensional tensors.
-    # We flatten the feature tensors to vectors for easier storage in Spark
-    # DataFrames.
-    output = [p.flatten() for p in preds]
-    return pd.Series(output)
-
-
-@pandas_udf('array<float>', PandasUDFType.SCALAR_ITER)
-def featurize_udf(content_series_iter, bc_model_weights):
-    """
-    This method is a Scalar Iterator pandas UDF wrapping our featurization
-    function. The decorator specifies that this returns a Spark DataFrame column
-    of type ArrayType(FloatType).
-
-    :param bc_model_weights: Broadcasted pretrained model weights
-    :param content_series_iter: This argument is an iterator over batches of
-        data, where each batch is a pandas Series of image data.
-    """
-    # With Scalar Iterator pandas UDFs, we can load the model once and then
-    # re-use it for multiple data batches.  This amortizes the overhead of
-    # loading big models.
-    model = model_fn(bc_model_weights)
-    for content_series in content_series_iter:
-        yield featurize_series(model, content_series)
+    buff = io.BytesIO()
+    np.save(buff, image_vector)
+    buff.seek(0)
+    return base64.b64encode(gzip.compress(buff.read()))

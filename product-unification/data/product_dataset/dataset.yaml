@@ -16,4 +16,4 @@ schema:
 materializations:
   - type: table
     target: layer
-    table_name: "shopee_products"
+    table_name: "shopee_products_500"

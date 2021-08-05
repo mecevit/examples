@@ -1,0 +1,29 @@
+# Product Unification Project Example
+#
+# Any directory includes an `dataset.yml` will be treated as a dataset
+# project. In this `yaml` file, we will define the attributes of our
+# featureset.
+
+apiVersion: 1
+
+type: featureset
+
+name: "image_similarity_features"
+description: "Image similarity feature computed from the vectorized image feature"
+
+features:
+  - name: image_similarity
+    description: "Product image similarity"
+    source: image_similarity/feature.py
+    environment: image_similarity/requirements.txt
+    fabric: "spark"
+
+
+schema:
+  # All of the features above should include this primary key.
+  # It will be used to join the features together.
+  primary_keys: ["posting_id"]
+
+materializations:
+  - type: table
+    target: layer
