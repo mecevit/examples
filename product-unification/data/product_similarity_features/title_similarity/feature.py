@@ -4,7 +4,6 @@ import gzip
 from typing import Any, Iterator
 
 import numpy as np
-import pandas as pd
 from layer import Context, Dataset, Featureset
 from pyspark.ml.linalg import Vectors, VectorUDT
 from pyspark.sql.functions import udf
@@ -13,8 +12,9 @@ from pyspark.sql.functions import pandas_udf, unbase64, col
 
 
 def build_feature(context: Context, product_features: Featureset("product_features")) -> Any:
+
     """
-    Compute similarity of the product-to-product image vector
+    Compute similarity of the product-to-product title vector
 
     :param context: layer context.
     :param product_features.
@@ -33,8 +33,7 @@ def build_feature(context: Context, product_features: Featureset("product_featur
         buff.write(uncompressed)
         buff.seek(0)
         arr = np.load(buff, allow_pickle=True, encoding='bytes')
-        values = [float(x) for x in arr]
-        vector = Vectors.dense(values)
+        vector = Vectors.dense(arr)
         return vector
 
     def cosine_similarity(v1, v2):
@@ -48,28 +47,19 @@ def build_feature(context: Context, product_features: Featureset("product_featur
         vector_simi = cosine_similarity(v1, v2)
         return float(vector_simi)
 
-    print("Load the data.")
+    # Load the data
     decompress = udf(lambda vector_str: decompress_base64(vector_str), VectorUDT())
-    image_df = product_features.to_spark()
-    images = image_df.select("posting_id", decompress("image_vector").alias("image_vector")).sort("posting_id").repartition(10).cache()
+    title_df = product_features.to_spark()
+    titles = title_df.select("posting_id", decompress("title_vector").alias("title_vector")).sort("posting_id").repartition(10).cache()
 
-    print("image_vector")
-    images.printSchema
-    images.show(5)
-    count = images.count()
-    print(f"Images Vector size: {count}")
-
-    print("Before cross join, we sort and rename our features")
     # Before cross join, we sort and rename our features
-    images_bis = images.selectExpr("posting_id as posting_id_2", "image_vector as iv")
+    titles_bis = titles.selectExpr("posting_id as posting_id_2", "title_vector as tv")
 
-    print("We do a cross join to create product pairs.")
     # We do a cross join to create product pairs.
-    joined = images.join(images_bis, images.posting_id < images_bis.posting_id_2, "cross")
+    joined = titles.join(titles_bis, titles.posting_id < titles_bis.posting_id_2, "cross")
 
     to_similarity = udf(lambda v1, v2: similarity(v1, v2), DoubleType())
 
-    cross_df = joined.select("posting_id", "posting_id_2", to_similarity(col("image_vector"), col("iv")).alias("image_similarity"))
+    cross_df = joined.select("posting_id", "posting_id_2", to_similarity(col("title_vector"), col("tv")).alias("title_similarity"))
 
     return cross_df.toPandas()
-
