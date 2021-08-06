@@ -14,19 +14,16 @@ from pyspark.sql.types import DoubleType, ArrayType, FloatType
 import numpy as np
 
 
-def train_model(context: Context, label_features: Featureset("label_features"), image_similarity_features: Featureset("image_similarity_features"),
-  title_similarity_features: Featureset("title_similarity_features")) -> Pipeline:
+def train_model(context: Context, product_features: Featureset("product_features"), product_similarity_features: Featureset("product_similarity_features")) -> Pipeline:
 
     context.spark().conf.set("spark.sql.shuffle.partitions", 25)
 
     # Load the data.
-    labels = label_features.to_spark()
-    image_similarities = image_similarity_features.to_spark()
-    title_similarities = title_similarity_features.to_spark()
+    pf = product_features.to_spark()
+    similarities = product_similarity_features.to_spark()
 
-    # We join our features with the labels featureset to compute the labels
-    join_labels = labels.selectExpr("posting_id as pid", "label_group", "image_phash")
-    similarities = image_similarities.join(title_similarities, on=["posting_id", "posting_id_2"], how="inner")
+    # We join our features with the product featureset to compute the labels
+    join_labels = pf.selectExpr("posting_id as pid", "label_group", "image_phash")
 
     label1_similarity = similarities.join(join_labels, similarities.posting_id == join_labels.pid, how="inner").selectExpr(
                                                                   "posting_id",

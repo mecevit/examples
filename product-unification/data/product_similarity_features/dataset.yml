@@ -8,16 +8,20 @@ apiVersion: 1
 
 type: featureset
 
-name: "title_similarity_features"
-description: "Title similarity features computed from the vectorized title feature"
+name: "product_similarity_features"
+description: "Product similarity features computed from the vectorized image features and label features"
 
 features:
+  - name: image_similarity
+    description: "Product image similarity"
+    source: image_similarity/feature.py
+    environment: image_similarity/requirements.txt
+    fabric: "spark"
   - name: title_similarity
     description: "Product title similarity"
     source: title_similarity/feature.py
     environment: title_similarity/requirements.txt
     fabric: "spark"
-
 
 schema:
   # All of the features above should include this primary key.

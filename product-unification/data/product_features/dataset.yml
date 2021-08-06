@@ -22,6 +22,11 @@ features:
     source: image_vector/feature.py
     environment: image_vector/requirements.txt
     fabric: "spark"
+  - name: "labels"
+    description: "Product similary labels"
+    source: label/feature.py
+    environment: label/requirements.txt
+    fabric: "spark"
 
 schema:
   # All of the features above should include this primary key.

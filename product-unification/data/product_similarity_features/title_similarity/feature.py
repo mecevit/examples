@@ -4,7 +4,6 @@ import gzip
 from typing import Any, Iterator
 
 import numpy as np
-import pandas as pd
 from layer import Context, Dataset, Featureset
 from pyspark.ml.linalg import Vectors, VectorUDT
 from pyspark.sql.functions import udf
@@ -12,8 +11,7 @@ from pyspark.sql.types import DoubleType, ArrayType, FloatType
 from pyspark.sql.functions import pandas_udf, unbase64, col
 
 
-def build_feature(context: Context, product_features: Featureset("product_features"),
-    image_features_dep: Featureset("image_similarity_features")) -> Any:
+def build_feature(context: Context, product_features: Featureset("product_features")) -> Any:
 
     """
     Compute similarity of the product-to-product title vector
@@ -35,7 +33,6 @@ def build_feature(context: Context, product_features: Featureset("product_featur
         buff.write(uncompressed)
         buff.seek(0)
         arr = np.load(buff, allow_pickle=True, encoding='bytes')
-        #values = [float(x) for x in arr]
         vector = Vectors.dense(arr)
         return vector
 
