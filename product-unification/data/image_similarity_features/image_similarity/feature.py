@@ -48,22 +48,14 @@ def build_feature(context: Context, product_features: Featureset("product_featur
         vector_simi = cosine_similarity(v1, v2)
         return float(vector_simi)
 
-    print("Load the data.")
+    # Load the data
     decompress = udf(lambda vector_str: decompress_base64(vector_str), VectorUDT())
     image_df = product_features.to_spark()
     images = image_df.select("posting_id", decompress("image_vector").alias("image_vector")).sort("posting_id").repartition(10).cache()
 
-    print("image_vector")
-    images.printSchema
-    images.show(5)
-    count = images.count()
-    print(f"Images Vector size: {count}")
-
-    print("Before cross join, we sort and rename our features")
     # Before cross join, we sort and rename our features
     images_bis = images.selectExpr("posting_id as posting_id_2", "image_vector as iv")
 
-    print("We do a cross join to create product pairs.")
     # We do a cross join to create product pairs.
     joined = images.join(images_bis, images.posting_id < images_bis.posting_id_2, "cross")
 

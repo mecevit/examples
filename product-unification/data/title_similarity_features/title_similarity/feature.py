@@ -50,22 +50,14 @@ def build_feature(context: Context, product_features: Featureset("product_featur
         vector_simi = cosine_similarity(v1, v2)
         return float(vector_simi)
 
-    print("Load the data.")
+    # Load the data
     decompress = udf(lambda vector_str: decompress_base64(vector_str), VectorUDT())
     title_df = product_features.to_spark()
     titles = title_df.select("posting_id", decompress("title_vector").alias("title_vector")).sort("posting_id").repartition(10).cache()
 
-    print("title_vector")
-    titles.printSchema
-    titles.show(5)
-    count = titles.count()
-    print(f"Titles Vector size: {count}")
-
-    print("Before cross join, we sort and rename our features")
     # Before cross join, we sort and rename our features
     titles_bis = titles.selectExpr("posting_id as posting_id_2", "title_vector as tv")
 
-    print("We do a cross join to create product pairs.")
     # We do a cross join to create product pairs.
     joined = titles.join(titles_bis, titles.posting_id < titles_bis.posting_id_2, "cross")
 
